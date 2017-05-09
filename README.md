@@ -54,11 +54,11 @@
 如果这两个 redis 不在同一个内网，要把 source redis 的数据同步到 target redis 上，就需要做防火墙转发设置。  
 
 在 source redis 上做以下设置
-
-     [root@source ~]# iptables -A INPUT -s 555.666.777.888/32 -p tcp -m tcp --dport 3679 -j ACCEPT    
+    
+     [root@source ~]# iptables -A INPUT -s 555.666.777.888/32 -p tcp -m tcp --dport 3679 -j ACCEPT
      [root@source ~]# iptables -t nat -A PREROUTING -d 111.222.333.444/32 -p tcp -m tcp --dport 3679 -j DNAT --to-destination 192.168.1.5
-     [root@source ~]# iptables -t nat -A POSTROUTING -d 192.168.1.5/32 -p tcp -m tcp --dport 3679 -o eth1 -j MASQUERADE  
-
+     [root@source ~]# iptables -t nat -A POSTROUTING -d 192.168.1.5/32 -p tcp -m tcp --dport 3679 -o eth1 -j MASQUERADE
+    
 然后，就可以在 target 机器上运行脚本  
 
     [root@target ~]# python migrate_redis.py 111.222.333.444:3679 555.666.777.888:3680    
