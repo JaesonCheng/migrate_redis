@@ -4,7 +4,7 @@
 
 ## migrate_redis.py
 
-### help
+### 帮助
 
     [root@itdhz JaesonCheng]# python migrate_redis.py
 
@@ -25,7 +25,7 @@
           3. python migrate_redis.py 192.168.1.1:4500 192.168.1.5:4500::passwd
           4. python migrate_redis.py 192.168.1.1:4501:0:passwd 192.168.1.5:4500:1:passwd 2
 
-### migrate
+### redis数据同步
 
     [root@itdhz JaesonCheng]# python migrate_redis.py 127.0.0.1:6379 127.0.0.1:6380
     **************************************************
@@ -43,3 +43,21 @@
 
     Start at 2017-05-09 13:47:30 , End at 2017-05-09 13:47:40 , Usetime: 10.000 s
     **************************************************
+
+### 不同区域防火墙转发设置
+
+例如：
+    source redis ： 111.222.333.444（外网） 192.168.1.5（内网）， redis启动时监听内网 3679 端口
+    target redis ： 555.666.777.888（外网） 192.168.2.5（内网）， redis启动时监听内网 3680 端口
+
+如果这两个 redis 不在同一个内网，要把 source redis 的数据同步到 target redis 上，就需要做防火墙转发设置。
+
+在 source redis 上做以下设置
+
+    [root@source ~]# iptables -A INPUT -s 555.666.777.888/32 -p tcp -m tcp --dport 3679 -j ACCEPT
+    [root@source ~]# iptables -t nat -A PREROUTING -d 111.222.333.444/32 -p tcp -m tcp --dport 3679 -j DNAT --to-destination 192.168.1.5
+    [root@source ~]# iptables -t nat -A POSTROUTING -d 192.168.1.5/32 -p tcp -m tcp --dport 3679 -o eth1 -j MASQUERADE
+    
+然后，就可以在 target 机器上运行脚本
+
+    [root@target ~]# python migrate_redis.py 111.222.333.444:3679 555.666.777.888:3680
