@@ -16,8 +16,8 @@
 
           SRC     源 Redis 信息，包括 IP，PORT，DB，PASSWD ，用冒号做分隔符
           DEST    目标 Redis 信息，包括 IP，PORT，DB，PASSWD ，用冒号做隔符
-          PORT    默认值 6379
-          DB      默认值 0
+          PORT    默认值 6379
+          DB      默认值 0
 
       example:
           1. python migrate_redis.py 192.168.1.1:4500 192.168.1.5:4500
