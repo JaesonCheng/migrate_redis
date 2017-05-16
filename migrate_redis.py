@@ -78,18 +78,23 @@ class RedisMigrate():
     def addkeyexist(self):
         self.keyexist = self.keyexist + 1
 
-    def checkeyexist(self,keys):
+    def checkeyexist(self):
+        exkeyList = []
+        i = -1
         srckeys = self.src_redis.keys()
         for key in srckeys:
             self.dst_pipe.exists(key)
         for st in self.dst_pipe.execute():
+            i = i + 1    # 获取索引
             if st:
                 self.addkeyexist()
+                exkeyList.append(srckeys[i])
+        return exkeyList
             
     def pipe_restore(self,keys):
         src_len = 0
         keylist = []
-        for key in self.src_redis.keys():
+        for key in keys:
             keylist.append(key)
             self.src_pipe.dump(key)
             self.src_pipe.ttl(key)
@@ -133,14 +138,21 @@ class RedisMigrate():
     def migrate(self):
         if self.src_redis.dbsize() != 0:
             keys = self.src_redis.keys()
-            self.checkeyexist(keys)
-            if self.keyexist > 0:
+            exkeylist = self.checkeyexist()
+            if self.keyexist == 0:
+                self.pipe_restore(keys)
+            elif self.keyexist > 0 and self.keyexist <= 50:
+                print exkeylist
+                for kk in exkeylist:
+                    keys.remove(kk)
+                self.pipe_restore(keys)
+                print "\nskip key : %d " % self.keyexist
+            else:
                 print "\nexist key in target redis : %d " % self.keyexist
                 print "sys.exit()"
                 print '*' * 60
                 sys.exit()
-            else:
-                self.pipe_restore(keys)
+                
         else:
             print 'source redis db is null'
             sys.exit()
