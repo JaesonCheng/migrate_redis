@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Date : 2017-05-09
+# Date : 2017-05-16
 # Author: JaesonCheng
-# Version: 0.2
+# Version: 0.3
 
 import datetime
 import sys
@@ -12,28 +12,23 @@ try:
 except:
     print 'moudle redis not install , please run cmd "pip install redis" first.'
     sys.exit(1)
-from multiprocessing.dummy import Pool as ThreadPool
 
 
 def usage():
 
     print u'''
   Usage: 
-      python %s SRC DEST [method]       同步源 Redis 所有 key 到目标 Redis 
+      python %s SRC DEST        同步源 Redis 所有 key 到目标 Redis 
 
       SRC     源 Redis 信息，包括 IP，PORT，DB，PASSWD ，用冒号做分割符
-      DEST    目标 Redis 信息，包括 IP，PORT，DB，PASSWD ，用冒号做割符
+      DEST    目标 Redis 信息，包括 IP，PORT，DB，PASSWD ，用冒号做分割符
       DB      默认选择 db 0
-      
-      method  取值为 1 或 2 
-          1   默认值，单个 key 依次操作，速度较慢
-          2   采用 redis pipeline 机制 , 同时多个 key 操作 ，速度较快
       
   example:
       1. python %s 192.168.1.1:4500 192.168.1.5:4500
       2. python %s 192.168.1.1:4500:0 192.168.1.5:4500:1
-      3. python %s 192.168.1.1:4500 192.168.1.5:4500::passwd
-      4. python %s 192.168.1.1:4501:0:passwd 192.168.1.5:4500:1:passwd 2
+      3. python %s 192.168.1.1:4500:1 192.168.1.5:4500::passwd
+      4. python %s 192.168.1.1:4501:0:passwd 192.168.1.5:4500:1:passwd
       ''' % (sys.argv[0],sys.argv[0],sys.argv[0],sys.argv[0],sys.argv[0])
 
             
@@ -48,100 +43,104 @@ class RedisMigrate():
         self.tdb = targetdb
         self.tpasswd = targetpasswd
         
-        self.threadnumber = 20
-        self.err_count = 0
-        self.pipe_size = 1000
+        self.valuenil = 0        # 取出来的 value 为空时 +1
+        self.keyexist = 0        # key 在 目标 redis 中存在时 +1
+        self.koverdue = 0        # key 已过期时 +1
+        self.pipesize = 1000     # 建议源为线上业务时，值不要超过1000， pipeline 方式会能 redis 产生阻断，影响线上 redis 正常请求。
 
         try:
             src_conn = redis.ConnectionPool(host=self.sip, port=self.sport, db=self.sdb, password=self.spasswd)
             self.src_redis = redis.Redis(connection_pool=src_conn)
+            self.src_pipe = self.src_redis.pipeline()
         except:
             print 'source redis can not connect'
             sys.exit(1)
         try:
             dst_conn = redis.ConnectionPool(host=self.tip, port=self.tport, db=self.tdb, password=self.tpasswd)
             self.dst_redis = redis.Redis(connection_pool=dst_conn)
+            self.dst_pipe = self.dst_redis.pipeline()
         except:
             print 'target redis can not connect'
             sys.exit(1)
-            
-        self.src_pipe = self.src_redis.pipeline()
-        self.dst_pipe = self.dst_redis.pipeline()
   
     def __len__(self):
-        return self.src_redis.dbsize()
+        return [self.src_redis.dbsize(), self.dst_redis.dbsize()]
 
     def __memused__(self):
-        return self.src_redis.info()['used_memory']
+        return [self.src_redis.info()['used_memory'], self.dst_redis.info()['used_memory']]
 
-    def add_err_count(self):
-        self.err_count = self.err_count + 1
+    def addvaluenil(self):
+        self.valuenil = self.valuenil + 1
         
-    def flush_target(self):
-        """Function to flush the target server."""
-        try:
-            self.dst_redis.flushdb()
-            return 'flushdb(%s) ok' % self.tdb
-        except:
-            return 'flushdb(%s) fail' % self.tdb
+    def addkeyoverdue(self):
+        self.koverdue = self.koverdue + 1
 
-    def base_restore(self,key):
-        """获取 key 的 value ，然后写入目标redis"""
-        try:
-            value = self.src_redis.dump(key)
-            kttl = self.src_redis.ttl(key)
-            if kttl == -2:    ## key 已过期
-                pass
+    def addkeyexist(self):
+        self.keyexist = self.keyexist + 1
+
+    def checkeyexist(self,keys):
+        srckeys = self.src_redis.keys()
+        for key in srckeys:
+            self.dst_pipe.exists(key)
+        for st in self.dst_pipe.execute():
+            if st:
+                self.addkeyexist()
+            
+    def pipe_restore(self,keys):
+        src_len = 0
+        keylist = []
+        for key in self.src_redis.keys():
+            keylist.append(key)
+            self.src_pipe.dump(key)
+            self.src_pipe.ttl(key)
+            if src_len < self.pipesize:
+                src_len += 1
             else:
-                self.dst_redis.restore(key, 0, value)
-                if kttl == -1:  ## key 永不过期
-                    pass
-                elif kttl == None:  ## 啥情况不清楚?
-                    pass
-                else:           ## update ttl
-                    self.dst_redis.expire(key,kttl)
-        except:
-            self.add_err_count()
-
-
-    def pipe_restore(self,key_list):
-        """通过redis的pipeline机制，一次提交多个命令；获取key ttl value，并set到目标redis"""
-        keyttlList = self.src_pipe.execute()
-        for (k, v, t) in zip(key_list, keyttlList[0::2], keyttlList[1::2]):
-            self.dst_pipe.set(k,v,ex=t)
-        result = self.dst_pipe.execute()
-        for (k, r) in zip(key_list, result):
-            if not r:
-                print "set %s fail." % k
-                sys.exit(1)
-
+                keyttlList = self.src_pipe.execute()
+                for (k, t, v) in zip(keylist, keyttlList[1::2], keyttlList[0::2]):
+                    if t == None or t == -1:
+                        if v != None:
+                            self.dst_pipe.restore(k,0,v)
+                        else:
+                            self.addvaluenil()
+                    elif t == -2:
+                        self.addkeyoverdue()
+                    else:
+                        if v != None:
+                            self.dst_pipe.restore(k,t,v)
+                        else:
+                            self.addvaluenil()
+                self.dst_pipe.execute()
+                src_len = 0
+                keylist = []
+        if keylist:    # 如果key列表里边有值
+            keyttlList = self.src_pipe.execute()
+            for (k, t, v) in zip(keylist, keyttlList[1::2], keyttlList[0::2]):
+                if t == None or t == -1:
+                    if v != None:
+                        self.dst_pipe.restore(k,0,v)
+                    else:
+                        self.addvaluenil()
+                elif t == -2:
+                    self.addkeyoverdue()
+                else:
+                    if v != None:
+                        self.dst_pipe.restore(k,t,v)
+                    else:
+                        self.addvaluenil()
+            self.dst_pipe.execute()
         
-    def migrate(self,method):
+    def migrate(self):
         if self.src_redis.dbsize() != 0:
             keys = self.src_redis.keys()
-            if method == 1:   # 一次提交一个命令，多线程提交
-                pool = ThreadPool(self.threadnumber)
-                results = pool.map(self.base_restore,keys)
-                pool.close()
-                pool.join()
-                
-            if method == 2:   # 通过redis的pipeline机制，一次提交多个命令
-                src_len = 0
-                key_list = []
-                for key in self.src_redis.keys():
-                    key_list.append(key)
-                    self.src_pipe.get(key)
-                    self.src_pipe.pttl(key)
-                    if src_len < self.pipe_size:
-                        src_len += 1
-                    else:
-                        self.pipe_restore(key_list)
-                        src_len = 0
-                        key_list = []
-
-                # 如果key列表里边有值
-                if key_list:
-                    self.pipe_restore(key_list)
+            self.checkeyexist(keys)
+            if self.keyexist > 0:
+                print "\nexist key in target redis : %d " % self.keyexist
+                print "sys.exit()"
+                print '*' * 60
+                sys.exit()
+            else:
+                self.pipe_restore(keys)
         else:
             print 'source redis db is null'
             sys.exit()
@@ -189,12 +188,6 @@ if __name__ == "__main__":
         else:
             usage()
             sys.exit(1)
-        if len(sys.argv) == 4:                         # method 模式           
-            if int(sys.argv[3]) == 1 or int(sys.argv[3]) == 2:
-                method = int(sys.argv[3])
-            else:
-                usage()
-                sys.exit(1)
     else:
         usage()
         sys.exit(1)
@@ -208,17 +201,19 @@ if __name__ == "__main__":
         
     ########################################################################   
     ## 开始同步 Redis 数据操作
-    print '*' * 50
+    print '*' * 60
     time1 = datetime.datetime.now()
 
-    mg = RedisMigrate(src_ip,src_port,src_db,src_pass,dst_ip,dst_port,dst_db,dst_pass)
-    print "redis src total keys: %d  used memory: %d" % (mg.__len__(),mg.__memused__()/1024.0/1024.0)
-    mg.migrate(method)
-    print "redis dst total keys: %d " % mg.dst_redis.dbsize()
+    r = RedisMigrate(src_ip,src_port,src_db,src_pass,dst_ip,dst_port,dst_db,dst_pass)
+    print "redis src total keys: %d  used memory: %d Mb" % (r.__len__()[0], r.__memused__()[0]/1024.0/1024.0)
+    r.migrate()
+    print "redis dst total keys: %d \n" % r.__len__()[1]
 
     time2 = datetime.datetime.now()
-    print "err_count: %d \n" % mg.err_count
+    print "value is nil: %d " % r.valuenil
+    print "key overdue : %d " % r.koverdue
+    print "key is exist: %d \n" % r.keyexist
     print "Start at %s , End at %s , Usetime: %.3f s" % (time1.strftime("%Y-%m-%d %H:%M:%S"),time2.strftime("%Y-%m-%d %H:%M:%S"),(time2-time1).seconds)
-    print '*' * 50
+    print '*' * 60
     ## 完成同步
     ########################################################################
