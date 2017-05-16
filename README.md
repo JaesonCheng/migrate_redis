@@ -34,7 +34,7 @@
 
 例如，将 ip=192.168.1.1 , port=6379 , db=0 , passwd='test123' 的源redis 的数据同步到 ip=192.168.1.5 , port=6379 , db=3, passwd=‘’ 的目标 redis上，可以如下写
 
-    python migrate_redis.py 192.168.1.1:::test123 192.168.1.5::3
+    python migrate_redis.py 192.168.1.1:::test123 192.168.1.5::3
 
 
 ### redis数据同步
