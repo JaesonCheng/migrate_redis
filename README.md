@@ -1,5 +1,7 @@
 # migrate_redis.py
 
+同步redis数据
+
     Author: JaesonCheng
     QQ: 408160341 
 
