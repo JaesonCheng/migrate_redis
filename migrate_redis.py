@@ -52,6 +52,7 @@ class RedisMigrate():
             src_conn = redis.ConnectionPool(host=self.sip, port=self.sport, db=self.sdb, password=self.spasswd)
             self.src_redis = redis.Redis(connection_pool=src_conn)
             self.src_pipe = self.src_redis.pipeline()
+            self.src_redis.dbsize()
         except:
             print 'source redis can not connect'
             sys.exit(1)
@@ -59,6 +60,7 @@ class RedisMigrate():
             dst_conn = redis.ConnectionPool(host=self.tip, port=self.tport, db=self.tdb, password=self.tpasswd)
             self.dst_redis = redis.Redis(connection_pool=dst_conn)
             self.dst_pipe = self.dst_redis.pipeline()
+            self.dst_redis.dbsize()
         except:
             print 'target redis can not connect'
             sys.exit(1)
