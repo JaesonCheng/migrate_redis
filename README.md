@@ -16,7 +16,7 @@
     [root@itdhz JaesonCheng]# python migrate_redis.py
 
       Usage: 
-          python migrate_redis.py SRC DEST [method]       同步源 Redis 所有 key 到目标 Redis 
+          python migrate_redis.py SRC DEST        同步源 Redis 所有 key 到目标 Redis 
 
           SRC     源 Redis 信息，包括 IP，PORT，DB，PASSWD ，用冒号做分隔符
           DEST    目标 Redis 信息，包括 IP，PORT，DB，PASSWD ，用冒号做隔符
