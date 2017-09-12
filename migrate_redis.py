@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Date : 2017-05-16
+# Date : 2017-09-12
 # Author: JaesonCheng
-# Version: 0.3
+# Version: 0.3.1
 
 import datetime
 import sys
@@ -114,7 +114,8 @@ class RedisMigrate():
                         self.addkeyoverdue()
                     else:
                         if v != None:
-                            self.dst_pipe.restore(k,t,v)
+                            #print "debug1: k=%s, t=%d, type(t)=%s" % (k, t, type(t))
+                            self.dst_pipe.restore(k,t*1000,v)
                         else:
                             self.addvaluenil()
                 self.dst_pipe.execute()
@@ -132,7 +133,8 @@ class RedisMigrate():
                     self.addkeyoverdue()
                 else:
                     if v != None:
-                        self.dst_pipe.restore(k,t,v)
+                        #print "debug1: k=%s, t=%d, type(t)=%s" % (k, t, type(t))
+                        self.dst_pipe.restore(k,t*1000,v)
                     else:
                         self.addvaluenil()
             self.dst_pipe.execute()
